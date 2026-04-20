@@ -151,12 +151,12 @@ if input_clicked:
     st.session_state.total_money += selected_money
     st.rerun()
 
-# --- 金銭返却処理 ---
+# --- 金銭投入処理 ---
 if return_clicked:
     if st.session_state.total_money > 0:
-        current = st.session_state.total_money
+        current_money = st.session_state.total_money
         with return_money_msg.container():
-            st.info(f"💰 お釣りは{current}円です。")
+            st.info(f"💰 お釣りは{current_money}円です。")
         st.session_state.total_money = 0
         time.sleep(2)
         return_money_msg.empty()
