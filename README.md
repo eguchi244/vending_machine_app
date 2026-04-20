@@ -1,0 +1,2 @@
+# vending_machine_app
+python学習用に自動販売機アプリを作成した
