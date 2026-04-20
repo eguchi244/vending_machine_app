@@ -115,11 +115,18 @@ class CashManager:
 # =========================
 # テストシナリオ
 # =========================
+# テスト用の初期データ準備
+def get_test_data():
+    inventory = {10000: 10, 5000: 10, 1000: 10, 500: 10, 100: 10, 50: 10, 10: 10}
+    # 投入制限チェック用の空カウンタ
+    deposit = {k: 0 for k in inventory.keys()}
+    return inventory, deposit
+
 def test_calc_change_success():
     """正常系: 投入とお釣り計算、在庫更新が正しく連動することを確認"""
-    cash_manager = CashManager({
-        10000: 10, 5000: 10, 1000: 10, 500: 10, 100: 10, 50: 10, 10: 10
-    })
+    # テスト用の初期データ
+    inventory, deposit = get_test_data()
+    cash_manager = CashManager(inventory, deposit)
 
     # 1000円投入（在庫が増える）
     cash_manager.deposit(1000)
@@ -141,9 +148,10 @@ def test_calc_change_success():
 def test_calc_change_stock_shortage():
     """異常系: 在庫（100円玉以下）が足りない場合に空の辞書が返ることを確認"""
     # 100円以下が0枚の金庫
-    cash_manager = CashManager({
-        10000: 10, 5000: 10, 1000: 10, 500: 0, 100: 0, 50: 0, 10: 0
-    })
+    inventory = {10000: 10, 5000: 10, 1000: 10, 500: 0, 100: 0, 50: 0, 10: 0}
+    deposit = {k: 0 for k in inventory.keys()}
+
+    cash_manager = CashManager(inventory, deposit)
 
     # 200円のお釣りは払えないはず
     change = cash_manager.calc_change(200)

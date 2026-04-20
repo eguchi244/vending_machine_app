@@ -5,15 +5,22 @@ pytest
 python -m pytest test/test_cash_manager.py
 """
 from src.cash_manager import CashManager
-from streamlit.testing.v1 import AppTest
+import pytest
+
+# テスト用の初期データ準備
+def get_test_data():
+    inventory = {10000: 10, 5000: 10, 1000: 10, 500: 10, 100: 10, 50: 10, 10: 10}
+    # 投入制限チェック用の空カウンタ
+    deposit = {k: 0 for k in inventory.keys()}
+    return inventory, deposit
 
 def test_calc_change_success():
     """正常系：お釣りが正しく計算され、在庫が足りる場合"""
     # 1. 初期在庫の設定
-    cash_manager = CashManager({
-        10000:10, 5000:10, 1000:10, 500:10, 100:10, 50:10, 10:10
-    })
-    
+    # テスト用の初期データ
+    inventory, deposit = get_test_data()
+    cash_manager = CashManager(inventory, deposit)
+
     # 2. 金銭投入（1000円札が1枚増えるはず）
     cash_manager.deposit(1000)
     
@@ -41,12 +48,27 @@ def test_calc_change_success():
 def test_calc_change_stock():
     """異常系：特定の硬貨在庫が足りず、お釣りが払えない場合"""
     # 500円玉以下が0枚の状態
-    cash_manager = CashManager({
-        10000:10, 5000:10, 1000:10, 500:0, 100:0, 50:0, 10:0
-    })
+    inventory = {10000: 10, 5000: 10, 1000: 10, 500: 0, 100: 0, 50: 0, 10: 0}
+    deposit = {k: 0 for k in inventory.keys()}
+
+    cash_manager = CashManager(inventory, deposit)
     
     # 200円のお釣り（100円玉等が必要だが在庫なし）
     change = cash_manager.calc_change(200)
     
     # 空の辞書が返ってくることを検証
     assert change == {}
+
+def test_deposit_limit_violation():
+    """異常系：1万円札を上限（5枚）を超えて投入しようとした場合にエラーになるか"""
+    inventory, deposit = get_test_data()
+    cash_manager = CashManager(inventory, deposit)
+
+    # 5枚まではOK(_ は使い捨ての変数)
+    for _ in range(5):
+        cash_manager.deposit(10000)
+    
+    # 6枚目で ValueError が発生して"制限"のメッセージが含まれることを検証
+    # Pythonの with 構文（コンテキストマネージャ）を使って、**「このブロック内で発生するエラーを監視します」**と宣言しています
+    with pytest.raises(ValueError, match="制限"):
+        cash_manager.deposit(10000)
