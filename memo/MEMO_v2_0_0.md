@@ -28,12 +28,13 @@
 - **[New!] 履歴管理 (Transaction Log)**
     - すべてのアクション（投入・購入・返却）を構造化データ(dict)として記録。
     - **記録項目**:
-        - `datetime`
-        - `type` (deposit/purchase/refund)
-        - `amount`
-        - `item`
-        - `change_detail`
-        - `balance_after`（処理後残高）
+        - `datetime`：いつ
+        - `type` ：何をしたか(deposit/purchase/refund)
+        - `item`：何の商品か
+        - `amount`：金額
+        - `change_detail`：お釣り内訳(JSON形式)
+        - `balance_before`：金庫残高(処理前)
+        - `balance_after`：金庫残高(処理後)
 
 - **現金以外の決済方法**（ICカード、クレジットカードなど）New! -> 保留（実装予定なし）
 - **お金投入前の選択式** New! -> 保留（実装予定なし）
@@ -62,7 +63,7 @@
     - 投入イベントを履歴に記録。->保留
 4. **購入実行 (Purchase)**
     - **成功時**: 
-        - `inserted_cash` + 商品価格を基にお釣りを計算
+        - `inventory` + 商品価格を基にお釣りを計算
         - お釣りを算出後、`inventory` に投入分を反映
         - 返却分を `inventory` から減算
         - 購入イベントを履歴に記録
@@ -93,5 +94,5 @@ vending_machine_app/
 
 - cash_manager.py: **金庫管理（CashManagerクラス）**を担当します。お釣り計算（貪欲法）や投入金の管理など、このアプリの「心臓部」となるロジックをここに集約します。
 
-- data_handler.py: **データ入出力（CSV/Pandas）**を担当します。履歴の保存や読み込みなど、ファイル操作に関する処理を専門に行います。
+- data_handler.py: **データ入出力（CSV/Pandas）**を担当します。履歴の保存や読み込みなど、ファイル操作に関する処理や分析を専門に行います。
 
