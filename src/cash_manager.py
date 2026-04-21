@@ -1,6 +1,6 @@
 """
 CashManager: 自販機の金庫管理クラス
-役割: 現金の在庫管理、お釣り計算アルゴリズムの実行、在庫の増減処理
+役割: 現金の金庫管理、お釣り計算アルゴリズムの実行、金庫の増減処理
 """
 
 class CashManager:
@@ -25,7 +25,7 @@ class CashManager:
 
     def deposit(self, bill_type: int) -> None:
         """
-        投入された現金を金庫の在庫に反映する
+        投入された現金を金庫の金庫に反映する
         
         Args:
             bill_type (int): 投入された金種（例: 1000）
@@ -42,7 +42,7 @@ class CashManager:
         if self.current_bills_deposit[bill_type] >= limit:
             raise ValueError(f"{bill_type}円の投入枚数が制限（{limit}枚）に達しました。")
 
-        # 在庫に加算
+        # 金庫に加算
         self.inventory[bill_type] += 1
         # 投入枚数に加算
         self.current_bills_deposit[bill_type] += 1
@@ -57,15 +57,15 @@ class CashManager:
 
     def calc_change(self, amount: int) -> dict[int, int]:
         """
-        指定された金額に対し、現在の在庫から払い出し可能な内訳を算出する
+        指定された金額に対し、現在の金庫から払い出し可能な内訳を算出する
         
         Algorithm:
-            高額紙幣から順に、在庫の許す限りお釣りに割り当てる。(貪欲法)
+            高額紙幣から順に、金庫の許す限りお釣りに割り当てる。(貪欲法)
 
         Returns:
             change_detail (dict[int, int]): 
                 成功時：払い出すべき各金種の枚数（全金種分を網羅）
-                失敗時：空の辞書（在庫不足などで1円単位まで払いきれない場合）
+                失敗時：空の辞書（金庫不足などで1円単位まで払いきれない場合）
         """
         # お釣りなし（0円）の場合は、全金種0枚の内訳を返す
         if amount == 0:
@@ -79,7 +79,7 @@ class CashManager:
         for bill in self._bills_desc:
             # その金種で理論上何枚払えるか算出
             count_needed = remaining_amount // bill
-            # 理論上の枚数と、実際の在庫枚数の少ない方を採用
+            # 理論上の枚数と、実際の金庫枚数の少ない方を採用
             count_to_give = min(count_needed, self.inventory[bill])
             # 各金種に応じた釣銭の枚数を格納
             change_detail[bill] = count_to_give
@@ -90,7 +90,7 @@ class CashManager:
         if remaining_amount == 0:
             return change_detail
         else:
-            # 端数が残る、あるいは在庫不足で払いきれないケース
+            # 端数が残る、あるいは金庫不足で払いきれないケース
             return {}
 
     def update_inventory(self, change_detail: dict[int, int]) -> None:
@@ -101,9 +101,9 @@ class CashManager:
             change_detail (dict[int, int]): calc_change() で得られた枚数内訳
         """
         for bill, count in change_detail.items():
-            # 念のため、実行直前に在庫不足が起きていないか確認
+            # 念のため、実行直前に金庫不足が起きていないか確認
             if self.inventory[bill] < count:
-                raise ValueError(f"在庫不整合: {bill}円が不足しています")
+                raise ValueError(f"金庫不整合: {bill}円が不足しています")
             self.inventory[bill] -= count
 
     @property
@@ -123,12 +123,12 @@ def get_test_data():
     return inventory, deposit
 
 def test_calc_change_success():
-    """正常系: 投入とお釣り計算、在庫更新が正しく連動することを確認"""
+    """正常系: 投入とお釣り計算、金庫更新が正しく連動することを確認"""
     # テスト用の初期データ
     inventory, deposit = get_test_data()
     cash_manager = CashManager(inventory, deposit)
 
-    # 1000円投入（在庫が増える）
+    # 1000円投入（金庫が増える）
     cash_manager.deposit(1000)
 
     # 880円のお釣りを要求(120円商品購入を想定)
@@ -136,9 +136,9 @@ def test_calc_change_success():
     change = cash_manager.calc_change(880)
     print(f"お釣り内訳(880円): {change}")
 
-    # 在庫を反映
+    # 金庫を反映
     cash_manager.update_inventory(change)
-    print(f"更新後の在庫: {cash_manager.inventory}")
+    print(f"更新後の金庫: {cash_manager.inventory}")
     
     # 期待値検証（ロジックにミスがないか総額でチェック）
     # 初期(166,600) + 投入(1,000) - 払出(880) = 166,720
@@ -146,7 +146,7 @@ def test_calc_change_success():
 
 
 def test_calc_change_stock_shortage():
-    """異常系: 在庫（100円玉以下）が足りない場合に空の辞書が返ることを確認"""
+    """異常系: 金庫（100円玉以下）が足りない場合に空の辞書が返ることを確認"""
     # 100円以下が0枚の金庫
     inventory = {10000: 10, 5000: 10, 1000: 10, 500: 0, 100: 0, 50: 0, 10: 0}
     deposit = {k: 0 for k in inventory.keys()}
@@ -156,7 +156,7 @@ def test_calc_change_stock_shortage():
     # 200円のお釣りは払えないはず
     change = cash_manager.calc_change(200)
     assert change == {}
-    print("在庫不足時のエラーハンドリング確認: OK")
+    print("金庫不足時のエラーハンドリング確認: OK")
 
 if __name__ == "__main__":
     test_calc_change_success()

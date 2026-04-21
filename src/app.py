@@ -19,7 +19,7 @@ BILL_TYPES = [1, 5, 10, 50, 100, 500, 1000, 5000, 10000]
 # ==========================================
 # 状態管理の初期化（session_state）
 # ==========================================
-# 金庫の在庫枚数
+# 金庫の金種枚数
 if 'cash_inventory' not in st.session_state:
     st.session_state.cash_inventory = {
         10: 10, 50: 10, 100: 10, 500: 10, 1000: 10, 5000: 10, 10000: 10
@@ -38,7 +38,7 @@ if 'total_money' not in st.session_state:
 # CashManagerのインスタンス化
 def get_cash_mgr():
     """
-    常に最新の在庫データを持ったCashManagerを返す
+    常に最新の金庫データを持ったCashManagerを返す
     session_stateにインスタンスは持たせないようにする
     """
     return CashManager(
@@ -133,7 +133,6 @@ with st.sidebar:
     # --- コイン投入エリア ---
     with st.container(border=True):
         st.header('💰 コイン投入口')
-        # ボタンやセレクトボックスの結果を格納
         selected_money = st.selectbox('投入する金額を選択', BILL_TYPES)
         input_clicked = st.button('投入')
         return_clicked = st.button('返却')
@@ -220,7 +219,7 @@ if return_clicked:
             return_money_msg.empty()
             st.rerun()
         else:
-            side_msg.error('申し訳ありません。お釣り（在庫）が足りず返却できません。サポートセンターまでご連絡ください。')
+            side_msg.error('申し訳ありません。お釣り（金庫）が足りず返却できません。サポートセンターまでご連絡ください。')
 
 # --- 商品購入処理 ---
 if buy_clicked:
@@ -233,7 +232,7 @@ if buy_clicked:
         change_detail = cash_mgr.calc_change(change_amount)
 
         if change_detail or change_amount == 0:
-            # 在庫を確定（減算）させる
+            # 金庫を確定（減算）させる
             cash_mgr.update_inventory(change_detail)
 
             # TODO ここに後で履歴記録(add_transaction_log)を追加する
@@ -256,9 +255,8 @@ if buy_clicked:
         else:
             # 計算はできるが、金庫の硬貨が足りない場合
             side_msg.error('申し訳ありません。お釣り切れのため購入できません。')
-    
-    # それ以外の処理（金額不足）
     else:
+        # それ以外の処理（金額不足）
         side_msg.error('金額が不足しています。')
 
 # 金額表示の更新（最後に実行して最新状態を反映）
