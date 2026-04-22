@@ -18,6 +18,7 @@ class CashManager:
             inventory (dict[int, int]): 金庫の金種(int)と枚数(int)のペア
             deposit (dict[int, int]): 投入金額の金種(int)と枚数(int)のペア
         """
+        # 金庫内の金種
         self.inventory = inventory
         # 貪欲法（大きい順に試行）のため、金種をあらかじめ降順でリスト化しておく
         self._bills_desc = sorted(self.inventory.keys(), reverse=True)

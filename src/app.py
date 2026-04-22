@@ -16,6 +16,8 @@ DRINK_MENU = {
     "Cola": 150, "Orange": 160, "Cocoa": 180, "Monster": 200
 }
 BILL_TYPES = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1]
+MAX_ITEM_STOCK = 5
+MAX_BILL_COUNT = 100
 
 # ==========================================
 # 状態管理の初期化（session_state）
@@ -303,11 +305,20 @@ def clear_message() -> None:
     footer_msg.empty()
     side_msg.empty()
     return_money_msg.empty()
+    stock_msg.empty()
     st.rerun()
 
 # ==========================================
 # メイン処理
 # ==========================================
+
+# --- タブの定義 ---
+tab_purchase, tab_sales, tab_item, tab_cash = st.tabs([
+    "自販機",
+    "売上管理",
+    "商品管理",
+    "金庫管理"
+])
 
 # 
 # サイドバーUIエリア
@@ -337,27 +348,169 @@ with st.sidebar:
 # 
 # メイン画面UIエリア
 # ==========================================
-main_view = st.container(border=True)
 
-title_area = main_view.container()
-menu_area = main_view.container()
-exit_area = main_view.container()
+# --- 購入タブ ---
+with tab_purchase:
+    main_view = st.container(border=True)
 
-# --- タイトル ---
-with title_area:
-    with st.container(border=True):
-        st.title("🥤 Streamlit 自販機")
+    title_area = main_view.container()
+    menu_area = main_view.container()
+    exit_area = main_view.container()
 
-# --- 商品一覧 ---
-with menu_area:
-    with st.container(border=True):
-        buy_clicked = display_drink_menu()
+    # --- タイトル ---
+    with title_area:
+        with st.container(border=True):
+            st.title("🥤 Streamlit 自販機")
 
-# --- 商品取出口 ---
-with exit_area:
-    with st.container(border=True):
-        st.write("📥 商品取出口")
-        footer_msg = st.empty()
+    # --- 商品一覧 ---
+    with menu_area:
+        with st.container(border=True):
+            buy_clicked = display_drink_menu()
+
+    # --- 商品取出口 ---
+    with exit_area:
+        with st.container(border=True):
+            st.write("📥 商品取出口")
+            footer_msg = st.empty()
+
+# --- 売上管理タブ ---
+with tab_sales:
+    st.header("売上分析レポート")
+    st.info("※ここは後ほど analysis.py と連携してグラフを表示します")
+    # 簡易表示（テスト用）
+    st.metric("現在のセッション売上", f"{st.session_state.total_money} 円")
+
+# --- 商品管理タブ ---
+with tab_item:
+    # タイトル
+    st.header("在庫補充・設定")
+    st.subheader("在庫一覧")
+
+    stock_msg = st.empty()
+
+    # テーブル
+    for name, price in DRINK_MENU.items():
+        col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 2])
+
+        with col1:
+            st.write(f"**{name}**({price}円)")
+        with col2:
+            stock = st.session_state.drink_inventory[name]
+            # 在庫が少ない場合に色を変えて警告
+            if stock <= 0:
+                st.markdown(f":red[在庫: {stock}]") 
+            elif stock <= 2:
+                st.markdown(f":orange[在庫: {stock}]")  
+            else:
+                st.markdown(f":blue[在庫: {stock}]")  
+        with col3:
+            if st.button("+1", key=f"add_{name}"):
+                if st.session_state.drink_inventory[name] < MAX_ITEM_STOCK:
+                    st.session_state.drink_inventory[name] += 1
+                    st.rerun()
+                else:
+                    stock_msg.error("すでに最大補充数です。") 
+                    clear_message()
+        with col4:
+            if st.button("-1", key=f"sub_{name}"):
+                if st.session_state.drink_inventory[name] > 0:
+                    st.session_state.drink_inventory[name] -= 1
+                    st.rerun()
+                else:
+                    stock_msg.error("これ以上は減らすことはできません。(0個)") 
+                    clear_message()
+        with col5:
+            if st.button(f"満タン補充", key=f"full_{name}"):
+                st.session_state.drink_inventory[name] = MAX_ITEM_STOCK
+                st.rerun()
+
+    st.divider()
+
+    # 全商品一括補充機能
+    if st.button("全商品一括補充", use_container_width=True):
+        for name in DRINK_MENU.keys():
+            st.session_state.drink_inventory[name] = MAX_ITEM_STOCK
+        stock_msg.success("全ての商品の在庫を補充しました！")
+        clear_message()
+
+# --- ④ 金庫管理タブ ---
+with tab_cash:
+    # タイトル
+    st.header("💰 金庫残高・金種内訳")
+
+    # 最新の金庫状況を取得
+    cash_mgr = get_cash_mgr()
+
+    # 金庫総額（カンマ区切り表示）
+    st.metric(f"金庫総額", f"{cash_mgr.total_inventory_value:,}円")
+    st.divider()
+
+    # 金種別在庫
+    st.subheader("金種別在庫")
+
+    # --- コールバック関数の定義 ---
+    # Streamlitの仕様上、ウィジェット表示後に値を書き換えるとエラーになるため、
+    # 描画前に実行されるコールバックを使用して状態を更新します。
+
+    def sync_inv_callback(b):
+        """ナンバーインプットが手動変更された際に在庫データを同期する"""
+        st.session_state.cash_inventory[b] = st.session_state[f"input_{b}"]
+
+    def handle_full_click(b):
+        """「満タン」ボタン押下時に在庫と入力欄の両方を更新する"""
+        st.session_state.cash_inventory[b] = MAX_BILL_COUNT
+        st.session_state[f"input_{b}"] = MAX_BILL_COUNT
+
+    def handle_bulk_click():
+        """「一括補充」ボタン押下時に全ての金種を更新する"""
+        for b in BILL_TYPES[:-2]:
+            st.session_state.cash_inventory[b] = MAX_BILL_COUNT
+            st.session_state[f"input_{b}"] = MAX_BILL_COUNT
+    # ----------------------------
+
+    # テーブル形式で金種ごとに表示（10円〜10000円）
+    for bill in BILL_TYPES[:-2]:
+        col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+
+        with col1:
+            st.write(f"**{bill:,}円**")
+
+        with col2:
+            # 現在の在庫数を取得
+            count = st.session_state.cash_inventory[bill]
+            
+            # 在庫数に応じた色の警告表示
+            if count <= 3:
+                st.markdown(f":red[{count} 枚]")
+            elif count <= 5:
+                st.markdown(f":orange[{count} 枚]")
+            else:
+                st.markdown(f":blue[{count} 枚]")    
+
+        with col3:
+            # 【重要】keyで状態を保持し、変更時はコールバックで在庫へ反映
+            # valueには在庫データを指定し、ボタン側からの変更も即座に反映されるようにします
+            st.number_input(
+                "枚数設定",
+                min_value=0,
+                max_value=MAX_BILL_COUNT,
+                value=st.session_state.cash_inventory[bill],
+                key=f"input_{bill}",
+                on_change=sync_inv_callback,
+                args=(bill,),
+                label_visibility="collapsed"
+            )
+
+        with col4:
+            # 個別補充ボタン：on_clickを使用してウィジェット生成前に値を書き換える
+            st.button("満タン", key=f"full_{bill}", on_click=handle_full_click, args=(bill,))
+
+    st.divider()
+
+    # 釣り銭準備金（金庫）の一括補充ボタン
+    # こちらもon_clickで処理を行うことでAPIエラーを回避します
+    if st.button("📦 釣り銭準備金を一括補充", use_container_width=True, on_click=handle_bulk_click):
+        st.success(f"全ての金種を {MAX_BILL_COUNT} 枚に補充しました。")
 
 # ==========================================
 # イベントハンドラー
