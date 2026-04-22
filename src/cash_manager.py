@@ -9,6 +9,7 @@ class CashManager:
         10000: 5, 5000: 5, 1000: 10, 500: 20, 100: 20,50: 20, 10: 20
     }
 
+
     def __init__(self, inventory: dict[int, int], deposit: dict[int, int]) -> None:
         """
         金庫を初期化し、計算用に金種をソートして保持する
@@ -25,7 +26,7 @@ class CashManager:
 
     def deposit(self, bill_type: int) -> None:
         """
-        投入された現金を金庫の金庫に反映する
+        投入された現金を金庫に反映する
         
         Args:
             bill_type (int): 投入された金種（例: 1000）
@@ -66,6 +67,7 @@ class CashManager:
             change_detail (dict[int, int]): 
                 成功時：払い出すべき各金種の枚数（全金種分を網羅）
                 失敗時：空の辞書（金庫不足などで1円単位まで払いきれない場合）
+                失敗時：Noneは払い出し不可
         """
         # お釣りなし（0円）の場合は、全金種0枚の内訳を返す
         if amount == 0:
