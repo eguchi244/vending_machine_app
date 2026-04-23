@@ -6,7 +6,7 @@
 import streamlit as st
 import time
 from cash_manager import CashManager
-from data_handler import add_transaction_log
+from data_handler import add_transaction_log, get_latest_inventory_from_csv # 追加
 
 # ==========================================
 # 定数（Constants, Config）
@@ -24,9 +24,25 @@ MAX_BILL_COUNT = 100
 # ==========================================
 # 金庫の在庫枚数
 if "cash_inventory" not in st.session_state:
-    st.session_state.cash_inventory = {
-        10000: 10, 5000: 10, 1000: 10, 500: 10, 100: 10, 50: 10, 10: 10
-    }
+    # CSVから最新状態を読み込み
+    csv_inv, csv_stock = get_latest_inventory_from_csv()
+    
+    # 金庫の在庫をセット
+    if csv_inv is not None:
+        # NOTE JSONの仕様でキーが文字列（"10000"等）のためint型に変換して引き継ぐ
+        st.session_state.cash_inventory = {int(k): v for k, v in csv_inv.items()}
+    else:
+        # CSVが空、または初回起動時はデフォルト値
+        st.session_state.cash_inventory = {
+            10000: 10, 5000: 10, 1000: 10, 500: 10, 100: 10, 50: 10, 10: 10
+        }
+
+    # ウィジェットの表示用ステートを引き継いだ値で初期化する
+    for bill, count in st.session_state.cash_inventory.items():
+        # key = f"input_{bill}"
+        # if key not in st.session_state:
+        #     st.session_state[key] = count
+        st.session_state[f"input_{bill}"] = count
 
 # 現在の各金種の投入枚数
 if "current_bills_deposit" not in st.session_state:
@@ -39,11 +55,14 @@ if "total_money" not in st.session_state:
     st.session_state.total_money = 0
 
 # 商品在庫
-if "drink_inventory" not in st.session_state:
-    st.session_state.drink_inventory = {
-        "Water": 5, "Tea": 5, "Coffee": 5, "Cider": 5,
-        "Cola": 5, "Orange": 5, "Cocoa": 5, "Monster": 5
-    }
+if "item_inventory" not in st.session_state:
+    # 商品在庫をセット
+    if csv_stock:
+        # 商品名は文字列のままなので変換不要
+        st.session_state.item_inventory = csv_stock
+    else:
+        # デフォルト値
+        st.session_state.item_inventory = {name: MAX_ITEM_STOCK for name in DRINK_MENU.keys()}
 
 # CashManagerのインスタンス化
 def get_cash_mgr():
@@ -99,13 +118,14 @@ def handle_deposit() -> None:
         # 処理後の金庫金額を取得
         after_cash = cash_mgr.total_inventory_value
 
-        # ログ記録メソッドを呼び出し
+        # CSV出力でログ記録
         add_transaction_log(
             log_type="deposit", # 投入処理
             amount=selected_money, # 投入金額（選択貨幣）
             balance_before=before_cash, # 処理前の金庫総額
             balance_after=after_cash, # 処理後の金庫総額
-            inventory_after=st.session_state.cash_inventory # 処理後の金庫各金種の枚数
+            inventory_after=st.session_state.cash_inventory, # 処理後の金庫各金種の枚数
+            item_stock_after=st.session_state.item_inventory, # 補充後の各商品の在庫数
         )
 
         st.rerun()
@@ -138,14 +158,15 @@ def handle_refund() -> None:
 
     # お釣り計算判定
     if change_detail is None:
-        # ログ記録メソッドを呼び出し
+        # CSV出力でログ記録
         add_transaction_log(
             log_type="refund_failed", # 返金処理
             amount=0, # 現在の合計金額
             change_detail={}, # お釣り内訳
             balance_before=before_cash, # 処理前の金庫総額
             balance_after=before_cash, # 失敗のため処理前の金庫総額を設定
-            inventory_after=st.session_state.cash_inventory # 処理後の金庫各金種の枚数
+            inventory_after=st.session_state.cash_inventory, # 処理後の金庫各金種の枚数
+            item_stock_after=st.session_state.item_inventory, # 補充後の各商品の在庫数
         )
 
         side_msg.error("お釣りが足りず返却できません。サポートセンターまでご連絡ください。")
@@ -161,14 +182,15 @@ def handle_refund() -> None:
     # 処理後の金庫残高を取得
     after_cash  = cash_mgr.total_inventory_value
 
-    # ログ記録メソッドを呼び出し
+    # CSV出力でログ記録
     add_transaction_log(
         log_type="refund", # 返金処理
         amount=-current_money, # 現在の合計金額
         change_detail=change_detail, # お釣り内訳
         balance_before=before_cash, # 処理前の金庫総額
         balance_after=after_cash, # 処理後の金庫総額
-        inventory_after=st.session_state.cash_inventory # 処理後の金庫各金種の枚数
+        inventory_after=st.session_state.cash_inventory, # 処理後の金庫各金種の枚数
+        item_stock_after=st.session_state.item_inventory, # 補充後の各商品の在庫数
     )
 
     # 投入制限枚数をリセット
@@ -192,7 +214,7 @@ def handle_purchase(buy_clicked: str) -> None:
     """
 
     # 商品在庫判定
-    if st.session_state.drink_inventory[buy_clicked] <= 0:
+    if st.session_state.item_inventory[buy_clicked] <= 0:
         side_msg.error(f"申し訳ありません。{buy_clicked} は売り切れです。")
         clear_message()
         return
@@ -228,9 +250,9 @@ def handle_purchase(buy_clicked: str) -> None:
         current_cash = cash_mgr.total_inventory_value
 
         # 商品在庫を減算
-        st.session_state.drink_inventory[buy_clicked] -= 1
+        st.session_state.item_inventory[buy_clicked] -= 1
 
-        # ログ記録メソッドを呼び出し
+        # CSV出力でログ記録
         add_transaction_log(
             log_type="purchase", # 購入処理
             amount=-DRINK_MENU[buy_clicked], # 商品金額
@@ -238,7 +260,8 @@ def handle_purchase(buy_clicked: str) -> None:
             change_detail={}, # 購入時はお釣りを払い出さない
             balance_before=current_cash, # 処理前の金庫総額
             balance_after=current_cash, # 処理後の金庫総額
-            inventory_after=st.session_state.cash_inventory # 処理後の金庫各金種の枚数(お釣りが確定するまで金種は増減させない)
+            inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数(お釣りが確定するまで金種は増減させない)
+            item_stock_after=st.session_state.item_inventory, # 補充後の各商品の在庫数
         )
 
         # 購入結果を表示
@@ -287,7 +310,7 @@ def display_drink_menu(row_size: int = 4) -> str | None:
                 st.markdown(f"### {name}\n{price}円")
 
                 # 在庫表示（追加）
-                stock = st.session_state.drink_inventory[name]
+                stock = st.session_state.item_inventory[name]
                 st.caption(f"在庫: {stock}")
 
                 # 在庫0ならボタン無効化
@@ -375,7 +398,7 @@ with tab_purchase:
 
 # --- 売上管理タブ ---
 with tab_sales:
-    st.header("売上分析レポート")
+    st.header("📈 売上分析レポート")
     st.info("※ここは後ほど analysis.py と連携してグラフを表示します")
     # 簡易表示（テスト用）
     st.metric("現在のセッション売上", f"{st.session_state.total_money} 円")
@@ -383,10 +406,13 @@ with tab_sales:
 # --- 商品管理タブ ---
 with tab_item:
     # タイトル
-    st.header("在庫補充・設定")
+    st.header("📦 在庫補充・設定")
     st.subheader("在庫一覧")
 
     stock_msg = st.empty()
+
+    # 現在の金庫総額を取得
+    total_cash = sum(k * v for k, v in st.session_state.cash_inventory.items())
 
     # テーブル
     for name, price in DRINK_MENU.items():
@@ -395,7 +421,7 @@ with tab_item:
         with col1:
             st.write(f"**{name}**({price}円)")
         with col2:
-            stock = st.session_state.drink_inventory[name]
+            stock = st.session_state.item_inventory[name]
             # 在庫が少ない場合に色を変えて警告
             if stock <= 0:
                 st.markdown(f":red[在庫: {stock}]") 
@@ -405,35 +431,84 @@ with tab_item:
                 st.markdown(f":blue[在庫: {stock}]")  
         with col3:
             if st.button("+1", key=f"add_{name}"):
-                if st.session_state.drink_inventory[name] < MAX_ITEM_STOCK:
-                    st.session_state.drink_inventory[name] += 1
+                if st.session_state.item_inventory[name] < MAX_ITEM_STOCK:
+                    st.session_state.item_inventory[name] += 1
+                    # CSV出力でログ記録
+                    add_transaction_log(
+                        log_type=f"item_refill_add({name})",  # 商品補充
+                        item=name, # 商品名
+                        amount=0, # 補充金額(お金の変動はしない)
+                        balance_before=total_cash, # 現在の金庫総額(お金の変動はしない)
+                        balance_after=total_cash, # 更新後の金庫総額(お金の変動はしない)
+                        inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数
+                        item_stock_after=st.session_state.item_inventory # 現在の商品在庫も記録
+                    )
                     st.rerun()
                 else:
                     stock_msg.error("すでに最大補充数です。") 
                     clear_message()
         with col4:
             if st.button("-1", key=f"sub_{name}"):
-                if st.session_state.drink_inventory[name] > 0:
-                    st.session_state.drink_inventory[name] -= 1
+                if st.session_state.item_inventory[name] > 0:
+                    st.session_state.item_inventory[name] -= 1
+                    # CSV出力でログ記録
+                    add_transaction_log(
+                        log_type=f"item_refill_sub({name})",  # 対象商品MAX補充
+                        item=name, # 商品名
+                        amount=0, # 補充金額(お金の変動はしない)
+                        balance_before=total_cash, # 現在の金庫総額(お金の変動はしない)
+                        balance_after=total_cash, # 更新後の金庫総額(お金の変動はしない)
+                        inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数
+                        item_stock_after=st.session_state.item_inventory # 現在の商品在庫も記録
+                    )
                     st.rerun()
                 else:
                     stock_msg.error("これ以上は減らすことはできません。(0個)") 
                     clear_message()
         with col5:
             if st.button(f"満タン補充", key=f"full_{name}"):
-                st.session_state.drink_inventory[name] = MAX_ITEM_STOCK
-                st.rerun()
+                if st.session_state.item_inventory[name] < MAX_ITEM_STOCK:
+                    st.session_state.item_inventory[name] = MAX_ITEM_STOCK
+                    # CSV出力でログ記録
+                    add_transaction_log(
+                        log_type=f"item_refill_full({name})",  # 対象商品MAX補充
+                        item=name, # 商品名
+                        amount=0, # 補充金額(お金の変動はしない)
+                        balance_before=total_cash, # 現在の金庫総額(お金の変動はしない)
+                        balance_after=total_cash, # 更新後の金庫総額(お金の変動はしない)
+                        inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数
+                        item_stock_after=st.session_state.item_inventory # 現在の商品在庫も記録
+                    )
+                    st.rerun()
+                else:
+                    stock_msg.error("すでに最大補充数です。") 
+                    clear_message()
 
     st.divider()
 
     # 全商品一括補充機能
     if st.button("全商品一括補充", use_container_width=True):
-        for name in DRINK_MENU.keys():
-            st.session_state.drink_inventory[name] = MAX_ITEM_STOCK
-        stock_msg.success("全ての商品の在庫を補充しました！")
-        clear_message()
+        # いずれかの在庫が MAX_ITEM_STOCK 未満である場合
+        if any(stock < MAX_ITEM_STOCK for stock in st.session_state.item_inventory.values()):
+            for name in DRINK_MENU.keys():
+                st.session_state.item_inventory[name] = MAX_ITEM_STOCK
+            # CSV出力でログ記録
+            add_transaction_log(
+                log_type=f"item_refill_all(ALL)",  # 対象商品MAX補充
+                item=name, # 商品名
+                amount=0, # 補充金額(お金の変動はしない)
+                balance_before=total_cash, # 現在の金庫総額(お金の変動はしない)
+                balance_after=total_cash, # 更新後の金庫総額(お金の変動はしない)
+                inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数
+                item_stock_after=st.session_state.item_inventory # 現在の商品在庫も記録
+            )
+            stock_msg.success("全ての商品の在庫を補充しました！")
+            clear_message()
+        else:
+            stock_msg.error("すでに最大補充数です。") 
+            clear_message()
 
-# --- ④ 金庫管理タブ ---
+# --- 金庫管理タブ ---
 with tab_cash:
     # タイトル
     st.header("💰 金庫残高・金種内訳")
@@ -448,37 +523,140 @@ with tab_cash:
     # 金種別在庫
     st.subheader("金種別在庫")
 
+    stock_msg = st.empty()
+
+    if st.session_state.cash_error_msg:
+        stock_msg.error(st.session_state.cash_error_msg)
+        st.session_state.cash_error_msg = None
+
     # --- コールバック関数の定義 ---
     # Streamlitの仕様上、ウィジェット表示後に値を書き換えるとエラーになるため、
     # 描画前に実行されるコールバックを使用して状態を更新します。
 
-    def sync_inv_callback(b):
-        """ナンバーインプットが手動変更された際に在庫データを同期する"""
-        st.session_state.cash_inventory[b] = st.session_state[f"input_{b}"]
+    # コールバック用の状態管理メッセージを初期化
+    if "cash_error_msg" not in st.session_state:
+        st.session_state.cash_error_msg = None    
 
-    def handle_full_click(b):
-        """「満タン」ボタン押下時に在庫と入力欄の両方を更新する"""
-        st.session_state.cash_inventory[b] = MAX_BILL_COUNT
-        st.session_state[f"input_{b}"] = MAX_BILL_COUNT
+    def sync_refill_callback(bill):
+        """数値入力ウィジェットが手動変更された際に金庫データを更新してCSV記録する"""
+        # 現在の金種枚数を取得（更新前）
+        prev_count = st.session_state.cash_inventory.copy()
 
-    def handle_bulk_click():
-        """「一括補充」ボタン押下時に全ての金種を更新する"""
-        for b in BILL_TYPES[:-2]:
-            st.session_state.cash_inventory[b] = MAX_BILL_COUNT
-            st.session_state[f"input_{b}"] = MAX_BILL_COUNT
-    # ----------------------------
+        # 現在の金庫総額を計算
+        prev_total = sum(k * v for k, v in prev_count.items())
 
-    # テーブル形式で金種ごとに表示（10円〜10000円）
-    for bill in BILL_TYPES[:-2]:
+        # 数値入力ウィジェットの入力値を取得
+        new_count = st.session_state[f"input_{bill}"]
+
+        # 入力上限ガード(保険)
+        if new_count > MAX_BILL_COUNT:
+            st.session_state.cash_error_msg = "すでに最大補充数です。"
+            return
+        
+        # 入力加減ガード(保険)
+        if new_count < 0:
+            st.session_state.cash_error_msg = "これ以上は減らせません。(0円)"
+            return
+
+        # 数値入力ウィジェットからの変更がないなら何もしない
+        if new_count == prev_count[bill]:
+            return
+        
+        # 数値入力ウィジェットの入力値で金庫データを更新する
+        st.session_state.cash_inventory[bill] = new_count
+
+        # 更新後の金庫総額を取得
+        after_total = sum(k * v for k, v in st.session_state.cash_inventory.items())
+
+        # 金種枚数の差を取得
+        diff_count = new_count - prev_count[bill]
+
+        # CSV出力でログ記録
+        add_transaction_log(
+            log_type=f"cash_refill({bill}円)", # 金銭手動補充
+            amount=diff_count * bill, # 補充金額
+            balance_before=prev_total, # 現在の金庫総額
+            balance_after=after_total, # 更新後の金庫総額
+            inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数
+            item_stock_after=st.session_state.item_inventory # 現在の商品在庫も記録
+        )
+
+    def sync_refill_full_callback(bill):
+        """「満タン」ボタン押下時に金庫と入力欄の両方を更新してCSV記録する"""
+        # 現在の金種枚数を取得（更新前）
+        prev_count = st.session_state.cash_inventory.copy()
+
+        # 現在の金庫総額を計算
+        prev_total = sum(k * v for k, v in prev_count.items())
+
+        # 入力上限ガード
+        if st.session_state.cash_inventory[bill] == MAX_BILL_COUNT:
+            st.session_state.cash_error_msg = "すでに最大補充数です。"
+            return
+        
+        #「満タン」ボタンからの変更がなければ何もしない
+        if prev_count[bill] == MAX_BILL_COUNT:
+            return
+        
+        # 「満タン」ボタンの入力値で金庫データを更新する
+        st.session_state.cash_inventory[bill] = MAX_BILL_COUNT
+        st.session_state[f"input_{bill}"] = MAX_BILL_COUNT
+
+        # 更新後の金庫総額を取得
+        after_total = sum(k * v for k, v in st.session_state.cash_inventory.items())
+
+        # 金庫枚数の差を取得
+        diff_count = MAX_BILL_COUNT - prev_count[bill]
+
+        # CSV出力でログ記録
+        add_transaction_log(
+            log_type=f"cash_refill_full({bill}円)", # 対象金種MAX補充
+            amount=diff_count * bill, # 補充金額
+            balance_before=prev_total, # 現在の金庫総額
+            balance_after=after_total, # 更新後の金庫総額
+            inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数
+            item_stock_after=st.session_state.item_inventory # 現在の商品在庫も記録
+        )
+
+    def sync_refill_all_callback():
+        """「一括補充」ボタン押下時に全ての金種を更新して記録する"""
+        # 現在の金種枚数を取得（更新前）
+        prev_count = st.session_state.cash_inventory.copy()
+        # 現在の金庫総額を計算（更新前）
+        prev_total = sum(k * v for k, v in prev_count.items())
+
+        # 上限ガード（すべての金種が最大補充数の時）| 「一括補充」ボタンからの変更がなければ何もしない
+        if all(v == MAX_BILL_COUNT for v in st.session_state.cash_inventory.values()):
+            st.session_state.cash_error_msg = "すでに最大補充数です。"
+            return
+
+        # 「一括補充」ボタンの入力値で金庫データを更新する
+        for bill in st.session_state.cash_inventory.keys():
+            st.session_state.cash_inventory[bill] = MAX_BILL_COUNT
+            st.session_state[f"input_{bill}"] = MAX_BILL_COUNT
+
+        # 更新後の金庫総額を取得
+        after_total = sum(k * v for k, v in st.session_state.cash_inventory.items())
+
+        # CSV出力でログ記録
+        add_transaction_log(
+            log_type="cash_refill_all(ALL)", # 全金種MAX補充
+            amount=after_total - prev_total, # 補充金額
+            balance_before=prev_total, # 現在の金庫総額
+            balance_after=after_total, # 更新後の金庫総額
+            inventory_after=st.session_state.cash_inventory, # 処理後の各金種の枚数
+            item_stock_after=st.session_state.item_inventory # 現在の商品在庫も記録
+        )
+
+    # --- テーブル ----
+    for bill in st.session_state.cash_inventory.keys():
         col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
 
         with col1:
             st.write(f"**{bill:,}円**")
-
         with col2:
             # 現在の在庫数を取得
             count = st.session_state.cash_inventory[bill]
-            
             # 在庫数に応じた色の警告表示
             if count <= 3:
                 st.markdown(f":red[{count} 枚]")
@@ -486,31 +664,28 @@ with tab_cash:
                 st.markdown(f":orange[{count} 枚]")
             else:
                 st.markdown(f":blue[{count} 枚]")    
-
         with col3:
-            # 【重要】keyで状態を保持し、変更時はコールバックで在庫へ反映
-            # valueには在庫データを指定し、ボタン側からの変更も即座に反映されるようにします
+            # NOTE keyで状態を保持し、変更時はコールバックで金庫へ反映する
+            # value は指定せず、key と callback で管理します(競合して無限ループになるため)
             st.number_input(
                 "枚数設定",
                 min_value=0,
                 max_value=MAX_BILL_COUNT,
-                value=st.session_state.cash_inventory[bill],
+                # value=st.session_state.cash_inventory[bill],
                 key=f"input_{bill}",
-                on_change=sync_inv_callback,
+                on_change=sync_refill_callback,
                 args=(bill,),
                 label_visibility="collapsed"
             )
-
         with col4:
-            # 個別補充ボタン：on_clickを使用してウィジェット生成前に値を書き換える
-            st.button("満タン", key=f"full_{bill}", on_click=handle_full_click, args=(bill,))
+            # 個別一括補充ボタン
+            st.button("満タン補充", key=f"full_{bill}", on_click=sync_refill_full_callback, args=(bill,))
 
     st.divider()
 
-    # 釣り銭準備金（金庫）の一括補充ボタン
-    # こちらもon_clickで処理を行うことでAPIエラーを回避します
-    if st.button("📦 釣り銭準備金を一括補充", use_container_width=True, on_click=handle_bulk_click):
-        st.success(f"全ての金種を {MAX_BILL_COUNT} 枚に補充しました。")
+    # 各金種一括補充
+    if st.button("📦 各金種一括補充", use_container_width=True, on_click=sync_refill_all_callback):
+        stock_msg.success(f"全ての金種を {MAX_BILL_COUNT} 枚に補充しました。")
 
 # ==========================================
 # イベントハンドラー
