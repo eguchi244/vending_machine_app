@@ -513,6 +513,10 @@ with tab_cash:
     # タイトル
     st.header("💰 金庫残高・金種内訳")
 
+    # コールバック用の状態管理メッセージを初期化
+    if "cash_error_msg" not in st.session_state:
+        st.session_state.cash_error_msg = None   
+
     # 最新の金庫状況を取得
     cash_mgr = get_cash_mgr()
 
@@ -532,10 +536,7 @@ with tab_cash:
     # --- コールバック関数の定義 ---
     # Streamlitの仕様上、ウィジェット表示後に値を書き換えるとエラーになるため、
     # 描画前に実行されるコールバックを使用して状態を更新します。
-
-    # コールバック用の状態管理メッセージを初期化
-    if "cash_error_msg" not in st.session_state:
-        st.session_state.cash_error_msg = None    
+ 
 
     def sync_refill_callback(bill):
         """数値入力ウィジェットが手動変更された際に金庫データを更新してCSV記録する"""
