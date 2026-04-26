@@ -9,7 +9,7 @@ from datetime import datetime
 import os
 
 # ファイルパス
-LOG_FILE = "vending_machine_log.csv"
+LOG_FILE = "log/vending_machine_log.csv"
 
 def add_transaction_log(
     log_type: str,
@@ -71,10 +71,12 @@ def add_transaction_log(
 
     # 取引イベントをCSVに1行追記する
     with open(LOG_FILE, mode="a", newline="", encoding="utf-8-sig") as f:
+        # writerオブジェクトを作成
         writer = csv.writer(f)
 
         # ファイルの新規作成時にヘッダーを付与する
         if not file_exists:
+            # ヘッダーを書き込む
             writer.writerow([
                 "datetime",
                 "log_type",
@@ -92,10 +94,13 @@ def add_transaction_log(
 
 def get_latest_inventory_from_csv():
     """CSVの最終行から在庫情報を読み取る"""
+    # ログファイル存在確認
     if not os.path.isfile(LOG_FILE):
+        # 存在しない場合は処理を終了
         return None, None
 
     try:
+        # CSVの最終行から在庫情報を読み取る
         with open(LOG_FILE, mode="r", encoding="utf-8-sig") as f:
             # CSV読み込む
             reader = list(csv.DictReader(f))
@@ -114,9 +119,8 @@ def get_latest_inventory_from_csv():
             # NOTE JSONの仕様でキーが文字列 ("1000") になっているため数値 (1000) に変換
             inventory = {int(k): v for k, v in raw_inventory.items()}
 
+            # 処理後の各金種枚数と在庫数を返す
             return inventory, item_stock
     
     except Exception as e:
-        # エラー発生時はログを出力してNoneを返す
-        print(f"Error reading CSV: {e}")
-        return None, None
+        raise RuntimeError(f"データ読み込みエラー: {e}")

@@ -7,7 +7,10 @@ import streamlit as st
 import time
 from cash_manager import CashManager
 from data_handler import add_transaction_log, get_latest_inventory_from_csv
-from analysis import load_data
+from analysis import (
+    load_data, get_sales_metrics, get_advanced_stats, 
+    get_daily_sales_data, get_item_sales_data, create_pie_chart
+)
 
 # ==========================================
 # 定数（Constants, Config）
@@ -25,18 +28,22 @@ MAX_BILL_COUNT = 100
 # ==========================================
 # 金庫の在庫枚数
 if "cash_inventory" not in st.session_state:
-    # CSVから最新状態を読み込み
-    csv_inv, csv_stock = get_latest_inventory_from_csv()
-    
-    # 金庫の在庫をセット
-    if csv_inv is not None:
-        # NOTE JSONの仕様でキーが文字列（"10000"等）のためint型に変換して引き継ぐ
-        st.session_state.cash_inventory = {int(k): v for k, v in csv_inv.items()}
+    try:
+        # CSVから最新状態を読み込み
+        csv_inv, csv_stock = get_latest_inventory_from_csv()
+    except RuntimeError as e:
+        # 警告メッセージ
+        st.error(f"{e}")
     else:
-        # CSVが空、または初回起動時はデフォルト値
-        st.session_state.cash_inventory = {
-            10000: 10, 5000: 10, 1000: 10, 500: 10, 100: 10, 50: 10, 10: 10
-        }
+        # 金庫の在庫をセット
+        if csv_inv is not None:
+            # NOTE JSONの仕様でキーが文字列（"10000"等）のためint型に変換して引き継ぐ
+            st.session_state.cash_inventory = {int(k): v for k, v in csv_inv.items()}
+        else:
+            # CSVが空、または初回起動時はデフォルト値
+            st.session_state.cash_inventory = {
+                10000: 10, 5000: 10, 1000: 10, 500: 10, 100: 10, 50: 10, 10: 10
+            }
 
 # 現在の各金種の投入枚数
 if "current_bills_deposit" not in st.session_state:
@@ -171,33 +178,37 @@ def handle_refund() -> None:
     # --- 正常系処理 ---
     # 返却処理
     # 金庫残高を更新
-    cash_mgr.update_inventory(change_detail)
+    try:
+        cash_mgr.update_inventory(change_detail)
+    except ValueError as e:
+        # 警告メッセージ
+        side_msg.error(f"{e}")
+    else:
+        # 処理後の金庫残高を取得
+        after_cash  = cash_mgr.total_inventory_value
 
-    # 処理後の金庫残高を取得
-    after_cash  = cash_mgr.total_inventory_value
+        # CSV出力でログ記録
+        add_transaction_log(
+            log_type="refund", # 返金処理
+            amount=-current_money, # 現在の合計金額
+            change_detail=change_detail, # お釣り内訳
+            balance_before=before_cash, # 処理前の金庫総額
+            balance_after=after_cash, # 処理後の金庫総額
+            inventory_after=st.session_state.cash_inventory, # 処理後の金庫各金種の枚数
+            item_stock_after=st.session_state.item_inventory, # 補充後の各商品の在庫数
+        )
 
-    # CSV出力でログ記録
-    add_transaction_log(
-        log_type="refund", # 返金処理
-        amount=-current_money, # 現在の合計金額
-        change_detail=change_detail, # お釣り内訳
-        balance_before=before_cash, # 処理前の金庫総額
-        balance_after=after_cash, # 処理後の金庫総額
-        inventory_after=st.session_state.cash_inventory, # 処理後の金庫各金種の枚数
-        item_stock_after=st.session_state.item_inventory, # 補充後の各商品の在庫数
-    )
+        # 投入制限枚数をリセット
+        cash_mgr.reset_bills_deposit()
 
-    # 投入制限枚数をリセット
-    cash_mgr.reset_bills_deposit()
+        # 返却メッセージを表示
+        with return_money_msg.container():
+            st.info(f"💰 お釣りは{current_money}円です。")
+            st.write(f"金種内訳:{ {k: v for k, v in change_detail.items() if v > 0 } }")
 
-    # 返却メッセージを表示
-    with return_money_msg.container():
-        st.info(f"💰 お釣りは{current_money}円です。")
-        st.write(f"金種内訳:{ {k: v for k, v in change_detail.items() if v > 0 } }")
-
-    # 合計金額の初期化
-    st.session_state.total_money = 0
-    clear_message()
+        # 合計金額の初期化
+        st.session_state.total_money = 0
+        clear_message()
 
 def handle_purchase(buy_clicked: str) -> None:
     """
@@ -393,8 +404,47 @@ with tab_purchase:
 # --- 売上管理タブ ---
 with tab_sales:
     st.header("📈 売上分析レポート")
-    st.metric("現在の売上総額", f"{st.session_state.total_money} 円")
-    # df = load_data()
+    df = load_data("log/vending_machine_log.csv")
+    
+    if df is not None and not df.empty:
+        # KPI表示(重要指標)の表示
+        sales, deposit, refund = get_sales_metrics(df)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("総売上", f"{int(sales):,}円")
+        c2.metric("総投入額", f"{int(deposit):,}円")
+        c3.metric("総返金額", f"{int(refund):,}円")
+        
+        st.divider()
+
+        # 購入額の統計データ表示
+        st.subheader("📊 統計データ (1件あたりの購入額)")
+        mean_val, max_val, median_val = get_advanced_stats(df)
+        s1, s2, s3 = st.columns(3)
+        s1.metric("平均単価", f"{mean_val:.1f}円")
+        s2.metric("最大単価", f"{max_val}円")
+        s3.metric("中央値", f"{median_val:.0f}円")
+
+        st.divider()
+
+        # グラフ表示
+        st.subheader("📈 売上推移")
+        daily_sales = get_daily_sales_data(df)
+        st.line_chart(daily_sales)
+
+        st.subheader("🥤 商品別分析")
+        col1, col2 = st.columns(2)
+        item_sales = get_item_sales_data(df)
+        
+        with col1:
+            st.caption("売上ランキング (円)")
+            st.bar_chart(item_sales)
+        with col2:
+            st.caption("売上構成比")
+            fig = create_pie_chart(item_sales)
+            st.pyplot(fig)
+            
+    else:
+        st.info("分析するログデータがまだありません。")
 
 # --- 商品管理タブ ---
 with tab_item:
@@ -500,6 +550,7 @@ with tab_item:
         else:
             stock_msg.error("すでに最大補充数です。") 
             clear_message()
+
 
 # --- 金庫管理タブ ---
 with tab_cash:
