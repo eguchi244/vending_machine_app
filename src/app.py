@@ -404,7 +404,7 @@ with tab_purchase:
 # --- 売上管理タブ ---
 with tab_sales:
     st.header("📈 売上分析レポート")
-    df = load_data("log/vending_machine_log.csv")
+    df = load_data("../log/vending_machine_log.csv")
     
     if df is not None and not df.empty:
         # KPI表示(重要指標)の表示

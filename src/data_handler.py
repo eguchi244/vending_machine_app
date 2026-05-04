@@ -9,7 +9,7 @@ from datetime import datetime
 import os
 
 # ファイルパス
-LOG_FILE = "log/vending_machine_log.csv"
+LOG_FILE = "../log/vending_machine_log.csv"
 
 def add_transaction_log(
     log_type: str,

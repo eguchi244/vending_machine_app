@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # ファイルパス
-LOG_FILE = "log/vending_machine_log.csv"
+LOG_FILE = "../log/vending_machine_log.csv"
 
 def load_data(LOG_FILE):
     """分析用のデータフォーマットの下準備"""
